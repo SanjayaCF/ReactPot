@@ -16,7 +16,12 @@ export function useMatch(matchId: bigint | undefined) {
     args: matchId !== undefined ? [matchId] : undefined,
     query: {
       enabled: matchId !== undefined,
-      refetchInterval: 5000,
+      // Stop polling when finished — no need to keep hitting RPC
+      refetchInterval: (query) => {
+        const state = (query.state.data as any)?.state;
+        if (state === 3) return false; // MatchState.Finished
+        return 4000;
+      },
     },
   });
 
