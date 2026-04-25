@@ -1,5 +1,7 @@
 'use client';
 
+export const dynamic = 'force-dynamic';
+
 import { useState } from 'react';
 import { useAccount, useConnect, useWriteContract } from 'wagmi';
 import { injected } from 'wagmi/connectors';
