@@ -2,9 +2,10 @@
 
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { useAccount, useConnect, useWriteContract } from 'wagmi';
+import { useAccount, useConnect, useWriteContract, useSwitchChain } from 'wagmi';
 import { injected } from 'wagmi/connectors';
 import { waitForTransactionReceipt } from 'wagmi/actions';
+import { monadTestnet } from '@/constants/chain';
 import { formatEther } from 'viem';
 import clsx from 'clsx';
 import { ArrowLeft, Users, Play, Zap, Clock, AlertCircle, StopCircle, TimerReset } from 'lucide-react';
@@ -12,6 +13,7 @@ import Link from 'next/link';
 
 import { useMatch, useIsPlayer, isValidMatch } from '@/hooks/useMatch';
 import { useMatchEvents } from '@/hooks/useMatchEvents';
+import { getOrCreateBurner, getBurner, submitTapWithBurner } from '@/lib/burnerWallet';
 import { REFLEX_ABI } from '@/constants/abi';
 import { wagmiConfig } from '@/lib/wagmiConfig';
 import { MatchState, type TapResult, type FinishedData } from '@/types';
@@ -42,9 +44,16 @@ function shortAddr(addr: string) {
 export default function MatchPage() {
   const params = useParams();
   const router = useRouter();
-  const { address, isConnected } = useAccount();
+  const { address, isConnected, chainId } = useAccount();
   const { connect } = useConnect();
+  const { switchChainAsync } = useSwitchChain();
   const { writeContractAsync } = useWriteContract();
+
+  async function ensureMonadChain() {
+    if (chainId !== monadTestnet.id) {
+      await switchChainAsync({ chainId: monadTestnet.id });
+    }
+  }
 
   const matchId = BigInt(params.id as string);
   const { match, refetch } = useMatch(matchId);
@@ -61,6 +70,10 @@ export default function MatchPage() {
   const hasTappedRef = useRef(false);
   const [hasTapped, setHasTapped] = useState(false);
   const [myReactionMs, setMyReactionMs] = useState<number | null>(null);
+
+  // ── Pre-GO countdown (3…2…1…GO!) ────────────────────────────────────────
+  const [countdownSec, setCountdownSec] = useState<number | null>(null);
+  const [goFired, setGoFired] = useState(false);
 
   // ── Host flow ────────────────────────────────────────────────────────────
   const [hostFlow, setHostFlow] = useState<HostFlow>('idle');
@@ -97,16 +110,24 @@ export default function MatchPage() {
     onMatchLocked: refetch,
   });
 
-  // ── Elapsed timer ────────────────────────────────────────────────────────
+  // ── Pre-GO countdown + elapsed timer ─────────────────────────────────────
   useEffect(() => {
-    if (effectiveState !== MatchState.Active || hasTapped) {
+    if (effectiveState !== MatchState.Active) {
       if (rafRef.current) cancelAnimationFrame(rafRef.current);
       return;
     }
     const goMs = Number(displayedGoMs);
     function tick() {
       const now = Date.now();
-      setElapsedMs(now > goMs ? now - goMs : 0);
+      const remaining = goMs - now;
+      if (remaining > 0) {
+        setCountdownSec(Math.ceil(remaining / 1000));
+        setGoFired(false);
+      } else {
+        setCountdownSec(null);
+        setGoFired(true);
+        if (!hasTapped) setElapsedMs(now - goMs);
+      }
       rafRef.current = requestAnimationFrame(tick);
     }
     rafRef.current = requestAnimationFrame(tick);
@@ -118,6 +139,25 @@ export default function MatchPage() {
     if (!match) return;
     if (match.state === MatchState.Active && match.goTimestampMs > 0n && goTimestampMs === null) {
       setGoTimestampMs(match.goTimestampMs);
+    }
+    // Derive finishedData from contract when page loaded after match ended
+    if (match.state === MatchState.Finished && finishedData === null) {
+      const pot = match.stakePerPlayer * BigInt(match.playerCount);
+      const fee = (pot * 200n) / 10000n;
+      const net = pot - fee;
+      const t = match.tappedCount;
+      let prizes: readonly [bigint, bigint, bigint];
+      let winnersCount: number;
+      if (t === 0) {
+        prizes = [0n, 0n, 0n]; winnersCount = 0;
+      } else if (t <= 4) {
+        prizes = [net, 0n, 0n]; winnersCount = 1;
+      } else if (t <= 10) {
+        prizes = [(net * 65n) / 100n, (net * 35n) / 100n, 0n]; winnersCount = 2;
+      } else {
+        prizes = [(net * 60n) / 100n, (net * 30n) / 100n, (net * 10n) / 100n]; winnersCount = 3;
+      }
+      setFinishedData({ topPlayers: match.topPlayers, topReactionMs: match.topReactionMs, prizes, winnersCount, fee });
     }
   }, [match]);
 
@@ -137,12 +177,15 @@ export default function MatchPage() {
     if (!match) return;
     setTxError('');
     try {
+      await ensureMonadChain();
+      const burner = getOrCreateBurner(matchId);
+      const GAS_DELEGATE = 2_000_000_000_000_000n; // 0.002 MON
       const hash = await writeContractAsync({
         address: CONTRACT_ADDRESS,
         abi: REFLEX_ABI,
         functionName: 'joinMatch',
-        args: [matchId],
-        value: match.stakePerPlayer,
+        args: [matchId, burner.address],
+        value: match.stakePerPlayer + GAS_DELEGATE,
       });
       await waitForTransactionReceipt(wagmiConfig, { hash });
       refetch();
@@ -156,6 +199,7 @@ export default function MatchPage() {
     if (!match) return;
     setTxError('');
     try {
+      await ensureMonadChain();
       if (match.state === MatchState.Open) {
         setHostFlow('locking');
         const lockHash = await writeContractAsync({
@@ -188,6 +232,7 @@ export default function MatchPage() {
   async function handleEndMatch() {
     setTxError('');
     try {
+      await ensureMonadChain();
       const hash = await writeContractAsync({
         address: CONTRACT_ADDRESS,
         abi: REFLEX_ABI,
@@ -205,6 +250,7 @@ export default function MatchPage() {
   async function handleForceSettle() {
     setTxError('');
     try {
+      await ensureMonadChain();
       const hash = await writeContractAsync({
         address: CONTRACT_ADDRESS,
         abi: REFLEX_ABI,
@@ -220,7 +266,7 @@ export default function MatchPage() {
   }
 
   const handleTap = useCallback(async () => {
-    if (hasTappedRef.current || effectiveState !== MatchState.Active) return;
+    if (hasTappedRef.current || effectiveState !== MatchState.Active || !goFired) return;
     hasTappedRef.current = true;
 
     const clientTimestampMs = BigInt(Date.now());
@@ -232,17 +278,25 @@ export default function MatchPage() {
 
     setTxError('');
     try {
-      await writeContractAsync({
-        address: CONTRACT_ADDRESS,
-        abi: REFLEX_ABI,
-        functionName: 'submitTap',
-        args: [matchId, clientTimestampMs],
-      });
+      const burner = getBurner(matchId);
+      if (burner && address) {
+        // Instant tap — no MetaMask popup
+        await submitTapWithBurner(matchId, address, clientTimestampMs);
+      } else {
+        // Fallback to MetaMask
+        await ensureMonadChain();
+        await writeContractAsync({
+          address: CONTRACT_ADDRESS,
+          abi: REFLEX_ABI,
+          functionName: 'submitTap',
+          args: [matchId, clientTimestampMs],
+        });
+      }
     } catch (err: unknown) {
       const e = err as { shortMessage?: string; message?: string };
       setTxError(e.shortMessage ?? e.message ?? 'Tap failed');
     }
-  }, [effectiveState, displayedGoMs, matchId, writeContractAsync]);
+  }, [effectiveState, goFired, displayedGoMs, matchId, address, writeContractAsync]);
 
   // ── Loading ──────────────────────────────────────────────────────────────
   if (!match) {
@@ -269,15 +323,16 @@ export default function MatchPage() {
     );
   }
 
-  // ── Active — fullscreen green ─────────────────────────────────────────────
+  // ── Active — fullscreen ───────────────────────────────────────────────────
   if (effectiveState === MatchState.Active) {
+    const bgColor = countdownSec !== null ? '#1a1a2e' : '#00e676';
     return (
-      <div className="fixed inset-0 flex flex-col" style={{ backgroundColor: '#00e676', touchAction: 'none' }}>
+      <div className="fixed inset-0 flex flex-col transition-colors duration-300" style={{ backgroundColor: bgColor, touchAction: 'none' }}>
         <div className="flex items-center justify-between px-5 pt-safe pt-4 pb-2">
-          <span className="font-mono text-sm font-bold text-black/50">
+          <span className="font-mono text-sm font-bold" style={{ color: countdownSec !== null ? 'rgba(255,255,255,0.4)' : 'rgba(0,0,0,0.5)' }}>
             Match #{matchId.toString()}
           </span>
-          {!hasTapped && (
+          {!hasTapped && goFired && (
             <div className="flex items-center gap-1.5 font-mono text-sm font-black text-black">
               <Clock size={14} />
               <span>{elapsedMs.toLocaleString()}ms</span>
@@ -285,15 +340,28 @@ export default function MatchPage() {
           )}
         </div>
 
-        <TapButton
-          onTap={handleTap}
-          tapped={hasTapped}
-          reactionMs={myReactionMs ?? undefined}
-          disabled={hasTapped}
-        />
+        {/* Countdown overlay */}
+        {countdownSec !== null && (
+          <div className="flex flex-1 flex-col items-center justify-center gap-4">
+            <p className="text-sm font-semibold uppercase tracking-widest text-white/40">Get ready…</p>
+            <span className="text-[10rem] font-black leading-none text-white tabular-nums">
+              {countdownSec}
+            </span>
+          </div>
+        )}
+
+        {/* GO! — tap zone */}
+        {countdownSec === null && (
+          <TapButton
+            onTap={handleTap}
+            tapped={hasTapped}
+            reactionMs={myReactionMs ?? undefined}
+            disabled={hasTapped}
+          />
+        )}
 
         {/* Host controls during active */}
-        {isHost && (
+        {isHost && goFired && (
           <div className="px-5 pb-safe pb-6 flex gap-3">
             <button
               onClick={handleEndMatch}

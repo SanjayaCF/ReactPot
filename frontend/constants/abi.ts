@@ -69,15 +69,36 @@ export const REFLEX_ABI = [
     type: 'function',
     name: 'createMatch',
     stateMutability: 'payable',
-    inputs: [],
+    inputs: [{ name: 'tapDelegate', type: 'address' }],
     outputs: [{ name: 'matchId', type: 'uint256' }],
   },
   {
     type: 'function',
     name: 'joinMatch',
     stateMutability: 'payable',
-    inputs: [{ name: 'matchId', type: 'uint256' }],
+    inputs: [
+      { name: 'matchId', type: 'uint256' },
+      { name: 'tapDelegate', type: 'address' },
+    ],
     outputs: [],
+  },
+  {
+    type: 'function',
+    name: 'submitTapFor',
+    stateMutability: 'nonpayable',
+    inputs: [
+      { name: 'matchId', type: 'uint256' },
+      { name: 'player', type: 'address' },
+      { name: 'clientTimestampMs', type: 'uint256' },
+    ],
+    outputs: [],
+  },
+  {
+    type: 'function',
+    name: 'GAS_DELEGATE_AMOUNT',
+    stateMutability: 'view',
+    inputs: [],
+    outputs: [{ name: '', type: 'uint256' }],
   },
   {
     type: 'function',

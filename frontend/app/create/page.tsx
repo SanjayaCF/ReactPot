@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { useAccount, useConnect, useWriteContract } from 'wagmi';
 import { injected } from 'wagmi/connectors';
 import { parseEventLogs, parseEther } from 'viem';
+import { getOrCreateBurner } from '@/lib/burnerWallet';
 import { waitForTransactionReceipt } from 'wagmi/actions';
 import { REFLEX_ABI } from '@/constants/abi';
 import { Header } from '@/components/Header';
@@ -50,12 +51,30 @@ export default function CreatePage() {
     setErrorMsg('');
 
     try {
+      // Generate burner wallet — matchId not known yet, use temp key 'pending'
+      // We'll move it after we get matchId from the event
+      const tempKey = `reflex_burner_pending_${Date.now()}`;
+      let burnerAddress: `0x${string}` = '0x0000000000000000000000000000000000000000';
+      let burnerKey: `0x${string}` | null = null;
+      try {
+        const { generatePrivateKey, privateKeyToAccount } = await import('viem/accounts');
+        burnerKey = generatePrivateKey();
+        burnerAddress = privateKeyToAccount(burnerKey).address;
+        sessionStorage.setItem(tempKey, JSON.stringify({ address: burnerAddress, privateKey: burnerKey }));
+      } catch { /* fallback: no delegate */ }
+
+      const GAS_DELEGATE = parseEther('0.002');
+      const stakeValue = parseEther(stakeOption);
+      const totalValue = burnerAddress !== '0x0000000000000000000000000000000000000000'
+        ? stakeValue + GAS_DELEGATE
+        : stakeValue;
+
       const hash = await writeContractAsync({
         address: CONTRACT_ADDRESS,
         abi: REFLEX_ABI,
         functionName: 'createMatch',
-        args: [],
-        value: parseEther(stakeOption),
+        args: [burnerAddress],
+        value: totalValue,
       });
 
       const receipt = await waitForTransactionReceipt(wagmiConfig, { hash });
@@ -68,6 +87,11 @@ export default function CreatePage() {
 
       const matchId = logs[0]?.args?.matchId;
       if (matchId !== undefined) {
+        // Move burner key to matchId-specific key
+        if (burnerKey && tempKey) {
+          sessionStorage.setItem(`reflex_burner_${matchId}`, JSON.stringify({ address: burnerAddress, privateKey: burnerKey }));
+          sessionStorage.removeItem(tempKey);
+        }
         router.push(`/match/${matchId}`);
       } else {
         throw new Error('Could not parse match ID from transaction');
