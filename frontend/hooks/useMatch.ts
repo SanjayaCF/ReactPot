@@ -16,7 +16,7 @@ export function useMatch(matchId: bigint | undefined) {
     args: matchId !== undefined ? [matchId] : undefined,
     query: {
       enabled: matchId !== undefined,
-      refetchInterval: 800,
+      refetchInterval: 3000,
     },
   });
 

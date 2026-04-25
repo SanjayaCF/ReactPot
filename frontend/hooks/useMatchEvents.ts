@@ -28,7 +28,7 @@ export function useMatchEvents({
     abi: REFLEX_ABI,
     eventName: 'MatchStarted',
     args: { matchId },
-    pollingInterval: 200,
+    pollingInterval: 2000,
     onLogs(logs) {
       for (const log of logs) {
         const args = log.args as { goTimestampMs: bigint };
@@ -42,7 +42,7 @@ export function useMatchEvents({
     abi: REFLEX_ABI,
     eventName: 'TapSubmitted',
     args: { matchId },
-    pollingInterval: 200,
+    pollingInterval: 2000,
     onLogs(logs) {
       for (const log of logs) {
         const args = log.args as { player: `0x${string}`; reactionMs: bigint };
@@ -56,7 +56,7 @@ export function useMatchEvents({
     abi: REFLEX_ABI,
     eventName: 'MatchFinished',
     args: { matchId },
-    pollingInterval: 200,
+    pollingInterval: 2000,
     onLogs(logs) {
       for (const log of logs) {
         const args = log.args as {
@@ -82,7 +82,7 @@ export function useMatchEvents({
     abi: REFLEX_ABI,
     eventName: 'MatchJoined',
     args: { matchId },
-    pollingInterval: 500,
+    pollingInterval: 2000,
     onLogs() {
       onMatchJoined?.();
     },
@@ -93,7 +93,7 @@ export function useMatchEvents({
     abi: REFLEX_ABI,
     eventName: 'MatchLocked',
     args: { matchId },
-    pollingInterval: 500,
+    pollingInterval: 2000,
     onLogs() {
       onMatchLocked?.();
     },
