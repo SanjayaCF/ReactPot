@@ -16,7 +16,7 @@ export function useMatch(matchId: bigint | undefined) {
     args: matchId !== undefined ? [matchId] : undefined,
     query: {
       enabled: matchId !== undefined,
-      refetchInterval: 3000,
+      refetchInterval: 5000,
     },
   });
 
@@ -46,7 +46,7 @@ export function useIsPlayer(matchId: bigint | undefined) {
     args: matchId !== undefined && address ? [matchId, address] : undefined,
     query: {
       enabled: matchId !== undefined && !!address,
-      refetchInterval: 2000,
+      refetchInterval: false, // fetch once — join state doesn't change
     },
   });
   return data as boolean | undefined;
@@ -61,7 +61,7 @@ export function useHasTapped(matchId: bigint | undefined) {
     args: matchId !== undefined && address ? [matchId, address] : undefined,
     query: {
       enabled: matchId !== undefined && !!address,
-      refetchInterval: 1000,
+      refetchInterval: false, // tracked locally in match page state
     },
   });
   return data as boolean | undefined;
@@ -72,7 +72,7 @@ export function useMatchCounter() {
     address: CONTRACT_ADDRESS,
     abi: REFLEX_ABI,
     functionName: 'matchCounter',
-    query: { refetchInterval: 3000 },
+    query: { refetchInterval: false }, // fetch once on home page load
   });
   return data as bigint | undefined;
 }
