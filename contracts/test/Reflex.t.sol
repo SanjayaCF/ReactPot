@@ -41,11 +41,11 @@ contract ReflexTest is Test {
         address[] memory players
     ) internal returns (uint256 matchId, uint256 goTs) {
         vm.prank(host);
-        matchId = reflex.createMatch{value: STAKE}();
+        matchId = reflex.createMatch{value: STAKE}(address(0));
 
         for (uint256 i = 0; i < players.length; i++) {
             vm.prank(players[i]);
-            reflex.joinMatch{value: STAKE}(matchId);
+            reflex.joinMatch{value: STAKE}(matchId, address(0));
         }
 
         vm.prank(host);
@@ -64,7 +64,7 @@ contract ReflexTest is Test {
 
     function test_CreateMatch_Success() public {
         vm.prank(host);
-        uint256 id = reflex.createMatch{value: STAKE}();
+        uint256 id = reflex.createMatch{value: STAKE}(address(0));
 
         assertEq(id, 1);
         IReflex.Match memory m = reflex.getMatch(1);
@@ -78,7 +78,7 @@ contract ReflexTest is Test {
     function test_CreateMatch_RevertIf_ZeroStake() public {
         vm.prank(host);
         vm.expectRevert(IReflex.StakeRequired.selector);
-        reflex.createMatch{value: 0}();
+        reflex.createMatch{value: 0}(address(0));
     }
 
     // =========================================================================
@@ -87,10 +87,10 @@ contract ReflexTest is Test {
 
     function test_JoinMatch_Success() public {
         vm.prank(host);
-        reflex.createMatch{value: STAKE}();
+        reflex.createMatch{value: STAKE}(address(0));
 
         vm.prank(p1);
-        reflex.joinMatch{value: STAKE}(1);
+        reflex.joinMatch{value: STAKE}(1, address(0));
 
         assertEq(reflex.getMatch(1).playerCount, 2);
         assertTrue(reflex.isPlayer(1, p1));
@@ -98,25 +98,25 @@ contract ReflexTest is Test {
 
     function test_JoinMatch_RevertIf_WrongStake() public {
         vm.prank(host);
-        reflex.createMatch{value: STAKE}();
+        reflex.createMatch{value: STAKE}(address(0));
 
         vm.prank(p1);
         vm.expectRevert(
             abi.encodeWithSelector(IReflex.StakeMismatch.selector, STAKE / 2, STAKE)
         );
-        reflex.joinMatch{value: STAKE / 2}(1);
+        reflex.joinMatch{value: STAKE / 2}(1, address(0));
     }
 
     function test_JoinMatch_RevertIf_AlreadyJoined() public {
         vm.prank(host);
-        reflex.createMatch{value: STAKE}();
+        reflex.createMatch{value: STAKE}(address(0));
 
         vm.prank(p1);
-        reflex.joinMatch{value: STAKE}(1);
+        reflex.joinMatch{value: STAKE}(1, address(0));
 
         vm.prank(p1);
         vm.expectRevert(abi.encodeWithSelector(IReflex.AlreadyJoined.selector, 1, p1));
-        reflex.joinMatch{value: STAKE}(1);
+        reflex.joinMatch{value: STAKE}(1, address(0));
     }
 
     // =========================================================================
@@ -125,9 +125,9 @@ contract ReflexTest is Test {
 
     function test_StartMatch_SetsGoTimestampMs() public {
         vm.prank(host);
-        reflex.createMatch{value: STAKE}();
+        reflex.createMatch{value: STAKE}(address(0));
         vm.prank(p1);
-        reflex.joinMatch{value: STAKE}(1);
+        reflex.joinMatch{value: STAKE}(1, address(0));
         vm.prank(host);
         reflex.lockMatch(1);
 
@@ -213,10 +213,10 @@ contract ReflexTest is Test {
         }
 
         vm.prank(host);
-        uint256 id = reflex.createMatch{value: STAKE}();
+        uint256 id = reflex.createMatch{value: STAKE}(address(0));
         for (uint256 i = 0; i < 5; i++) {
             vm.prank(extra[i]);
-            reflex.joinMatch{value: STAKE}(id);
+            reflex.joinMatch{value: STAKE}(id, address(0));
         }
         vm.prank(host);
         reflex.lockMatch(id);

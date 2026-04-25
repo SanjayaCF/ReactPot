@@ -302,7 +302,7 @@ contract ReflexTournament {
         Tournament storage t = _tournaments[tournamentId];
         address[] storage players = _registeredPlayers[tournamentId];
 
-        matchId = reflexGame.createMatch{value: t.entryFee}();
+        matchId = reflexGame.createMatch{value: t.entryFee}(address(0));
         _roundMatchIds[tournamentId].push(matchId);
     }
 
